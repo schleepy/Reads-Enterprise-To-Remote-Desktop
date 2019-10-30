@@ -4,31 +4,118 @@ using RETRD.Models.Configuration;
 using System;
 using System.Collections.Generic;
 using System.DirectoryServices;
+using System.IO;
 using System.Linq;
 using System.Text;
+using File = RETRD.Models.Configuration.File;
 
 namespace RETRD
 {
     class Program
     {
-        static string exportFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        private static string _outputDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+        static string OutputDirectory
+        {
+            get
+            {
+                return _outputDirectory;
+            }
+            set
+            {
+                if (!Directory.Exists(value))
+                {
+                    throw new DirectoryNotFoundException($"Directory {value} is not a valid path");
+                }
+            }
+        }
+
+        static string OutputFilename { get; set; } = "Computers";
+        static string Domain { get; set; }
+        static string Username { get; set; }
+        static string Password { get; set; }
+        static string LDAPPAth { get; set; }
 
         static void Main(string[] args)
         {
-            /*var fuck = new RDCManager();
+            // Basic unhandled exception trapper
+            System.AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionTrapper;
 
-            var what = fuck.Serialize(Encoding.UTF8);*/
+            args = new string[2] { "--ldap-path", "OU=Tolvur,DC=2t,DC=local" };
 
-            var wow = ExportConfigurationFromActiveDirectory(Console.ReadLine());
+            ParseArguments(args);
 
-            var neat = wow.Serialize(Encoding.UTF8);
+            var configuration = ExportConfigurationFromActiveDirectory(LDAPPAth);
 
+            var serializedConfiguration = configuration.Serialize(Encoding.UTF8);
 
-            /*Console.WriteLine("Enter an LDAP Path");
+            var filePath = $"{OutputDirectory}\\{OutputFilename}.rdg";
 
-            var ldapPath = Console.ReadLine();
-            */
+            // Delete the file if it already exists
+            if (System.IO.File.Exists(filePath))
+                System.IO.File.Delete(filePath);
+
+            System.IO.File.WriteAllText(filePath, serializedConfiguration);
+
             Console.ReadKey();
+        }
+
+        private static void UnhandledExceptionTrapper(object sender, UnhandledExceptionEventArgs e)
+        {
+            Console.Error.Write($"'{((Exception)e.ExceptionObject).Message}'\nPress any key to exit");
+            Console.ReadKey();
+            Environment.Exit(-1);
+        }
+
+        /// <summary>
+        /// Parers for input arguments
+        /// </summary>
+        static void ParseArguments(string[] args)
+        {
+            for (int i = 0; i < args.Length; i += 2)
+            {
+                var argument = args[i].ToLower();
+                var value = args[i + 1];
+
+                try
+                {
+                    switch (argument)
+                    {
+                        case "--domain":
+                            Domain = value;
+                            break;
+
+                        case "--username":
+                            Username = value;
+                            break;
+
+                        case "--password":
+                            Password = value;
+                            break;
+
+                        case "--ldap-path":
+                            LDAPPAth = value;
+                            break;
+
+                        case "--output-filename":
+                            OutputFilename = value;
+                            break;
+
+                        case "--output-directory":
+                            OutputDirectory = value;
+                            break;
+
+                        default:
+                            throw new ArgumentNullException($"'{argument}' is not a valid argument");
+                    }
+                } 
+                catch (Exception e)
+                {
+                    Console.Error.Write($"'{e.Message}'\nPress any key to exit");
+                    Console.ReadKey();
+                    Environment.Exit(-1);
+                }
+            }
         }
 
         /// <summary>
@@ -36,6 +123,8 @@ namespace RETRD
         /// </summary>
         static RDCManager ExportConfigurationFromActiveDirectory(string ldap)
         {
+            if (string.IsNullOrEmpty(ldap)) throw new ArgumentNullException("LDAPPath can not be null");
+
             using(var entry = new DirectoryEntry(StringHelpers.FormatLdapPath(ldap)))
             {
                 return new RDCManager
@@ -44,7 +133,7 @@ namespace RETRD
                     {
                         Properties = new FileProperties
                         {
-                            Name = "Tölvur"
+                            Name = OutputFilename
                         },
                         Groups = GetGroupsFromOU(entry),
                         Servers = GetComputersFromOU(entry)
